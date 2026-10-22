@@ -1,0 +1,70 @@
+name: PR checks and preview archive
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the actual PR commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build Linux x64 archive for preview host
+        run: pnpm build --target linux-x64 --node-version 24 --tar
+
+      - name: Record and verify artifact identity
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          node -e 'const t = require("./dist/package.json").nocobase.buildTarget; if (t.platform !== "linux" || t.arch !== "x64" || t.libc !== "glibc" || t.nodeMajor !== 24) process.exit(1)'
+          tar -tzf storage/exports/dist.tar.gz > /dev/null
+          cd storage/exports
+          sha256sum dist.tar.gz > dist.tar.gz.sha256
+          printf '%s\n' "$SOURCE_SHA" > source-sha.txt
+
+      - name: Upload preview archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-archive-${{ github.event.pull_request.head.sha }}
+          path: |
+            storage/exports/dist.tar.gz
+            storage/exports/dist.tar.gz.sha256
+            storage/exports/source-sha.txt
+          if-no-files-found: error
+          retention-days: 7

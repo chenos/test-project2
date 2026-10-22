@@ -111,3 +111,74 @@ version alignment before adding an editor-dependent feature.
 
 The default jobs and queues run in this process. Their single-process startup
 warnings do not require additional infrastructure for local development.
+
+## PR checks and preview archive
+
+Every pull request to `main` runs formatting, lint, type checking and tests, then
+builds a Linux x64 / glibc / Node 24 archive. The workflow checks out the pull
+request's head commit, not GitHub's temporary merge commit. Its artifact is named
+`preview-archive-<head-sha>` and contains `dist.tar.gz`, a SHA-256 checksum file
+and `source-sha.txt`. The workflow uses no Studio credential and never deploys.
+
+The existing Studio `preview` environment uses the host/in-process backend and
+accepts archives, not images. Its API does not report the host CPU, libc or Node
+major, so a person who manages the host must confirm that it runs Linux x64 with
+glibc and Node 24 before the first release. If it differs, adjust the workflow
+target and rebuild before uploading. Do not substitute a local build artifact
+for the archive from the PR's checked head commit.
+
+### Publish a PR preview (authorized person)
+
+1. Confirm the PR checks passed for its current head and note that full commit
+   SHA. Download the matching artifact from the same successful Actions run:
+
+   ```bash
+   gh run download <run-id> --repo chenos/test-project2 \
+     --name preview-archive-<head-sha> --dir <download-dir>
+   cd <download-dir>
+   cat source-sha.txt
+   sha256sum -c dist.tar.gz.sha256
+   tar -tzf dist.tar.gz | head
+   ```
+
+   `source-sha.txt` must equal the current PR head. Inspect the archive's
+   `dist/package.json` build target as well. Stop if identity, platform or
+   integrity differs.
+
+2. Sign in to `https://studio-test-1.v2.test.nocobase.com` with a person account
+   that may create and deploy Apps. Use that Studio's `nb-studio` CLI and confirm
+   the server and identity with `nb-studio --help` and `nb-studio whoami --json`.
+   Do not export or print the repository's `NB_STUDIO_API_KEY` secret for this
+   manual operation. The agent-run identity cannot use `app ensure` or `deploy`.
+3. In the **existing** `preview` environment, ensure a stable PR-specific App.
+   For this PR, use `test-project2-pr-1`. Confirm `nb-studio app ensure --help`
+   under the person account, then run:
+
+   ```bash
+   nb-studio app ensure test-project2-pr-1 --environment preview
+   ```
+
+   Supply the repository option if that person's CLI requires it. Do not
+   create another environment or an image registry.
+
+4. Confirm `nb-studio deploy --help` under the person account. Upload and deploy
+   the checked archive with the **open PR's real head SHA**:
+
+   ```bash
+   nb-studio deploy --app test-project2-pr-1 \
+     --repository chenos/test-project2 --sha <head-sha> \
+     --file dist.tar.gz --json
+   ```
+
+   Studio then associates the App with the PR as its preview. Keep the returned
+   release and deployment IDs for verification. If Studio reports missing App
+   configuration, complete it with the person's authorized controls before
+   retrying. Never copy local `config.yml` or `storage/` into the archive.
+
+5. Read `nb-studio preview status --issue <issue-key> --json` (or the App's
+   deployment record) and use its returned public URL and running SHA. The
+   environment's `/{appId}/` URL shape is not a substitute for that actual
+   returned address. In a browser at that URL, sign in, open Hello from the
+   menu, open it directly, refresh it and return to Home. Record the checks and
+   the archive SHA-256 with the release and deployment IDs. A successful upload
+   alone does not establish a working preview.

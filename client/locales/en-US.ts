@@ -9,8 +9,9 @@ const enUS = {
   // The application's copy goes here, one group per feature. A shared group such as `navigation` is extended by
   // spreading the system one first, `navigation: { ...systemEnUS.navigation, orders: 'Orders' }`, since a group
   // written here replaces the system group of the same name rather than merging with it.
-  navigation: { ...systemEnUS.navigation, hello: 'Hello' },
+  navigation: { ...systemEnUS.navigation, hello: 'Hello', hello2: 'Hello 2' },
   hello: { title: 'Hello', description: 'Welcome to the Hello page.' },
+  hello2: { title: 'Hello 2', description: 'Welcome to the Hello 2 page.' },
 };
 
 /**

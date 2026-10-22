@@ -56,6 +56,7 @@ describe('app client routes', () => {
       { name: 'home', authorizedAs: null },
       { name: 'inbox', authorizedAs: null },
       { name: 'hello', authorizedAs: null },
+      { name: 'hello-2', authorizedAs: null },
     ]);
   });
 
@@ -76,6 +77,7 @@ describe('app client routes', () => {
       { name: 'home', authorizedAs: null },
       { name: 'inbox', authorizedAs: null },
       { name: 'hello', authorizedAs: null },
+      { name: 'hello-2', authorizedAs: null },
       { name: 'settingsUsers', authorizedAs: 'user:*' },
       { name: 'settingsUserCreate', authorizedAs: 'user:*' },
       { name: 'settingsUser', authorizedAs: 'user:*' },

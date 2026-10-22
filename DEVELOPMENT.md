@@ -112,22 +112,53 @@ version alignment before adding an editor-dependent feature.
 The default jobs and queues run in this process. Their single-process startup
 warnings do not require additional infrastructure for local development.
 
-## PR checks and preview archive
+## PR checks and Studio previews
 
 Every pull request to `main` runs formatting, lint, type checking and tests, then
 builds a Linux x64 / glibc / Node 24 archive. The workflow checks out the pull
 request's head commit, not GitHub's temporary merge commit. Its artifact is named
 `preview-archive-<head-sha>` and contains `dist.tar.gz`, a SHA-256 checksum file
-and `source-sha.txt`. The workflow uses no Studio credential and never deploys.
+and `source-sha.txt`. The check-and-build job uses no Studio credential.
+
+After those checks pass, a separate job downloads that exact artifact, verifies
+its source SHA and checksum, and deploys it to
+`https://studio-test-1.v2.test.nocobase.com`, using the existing `preview`
+environment and App ID `test-project2-pr-<PR-number>`. Studio associates the
+App with the open PR and shows it on linked issues, including PM-2 for PR #1.
+Studio removes the preview and its data when the PR is merged or closed.
+Fork PRs and PRs labeled `no-preview` still run checks but skip deployment.
+New pushes cancel superseded runs for the same PR.
+
+The repository's Actions secret `NB_STUDIO_API_KEY` must hold this Studio's
+**repository CI key**, which may create this repository's preview Apps. Configure
+it as a person who manages this Studio project and the GitHub repository:
+
+```bash
+set -o pipefail
+nb-studio build ci setup chenos/test-project2 --profile studio-test-1 --reveal --json \
+  | jq -er .result.data.secret \
+  | gh secret set NB_STUDIO_API_KEY --repo chenos/test-project2
+```
+
+The local `studio-test-1` profile must point to the URL above. The secret is
+passed directly to GitHub, never committed or printed. Running setup again
+replaces the key's secret, so update GitHub in the same operation. Only the
+deployment job receives it. The workflow installs the CLI from this Studio and
+uses `nb-studio` for build reporting, App creation and deployment; application
+source and dependency scripts run only in the earlier job without the key.
 
 The existing Studio `preview` environment uses the host/in-process backend and
 accepts archives, not images. Its API does not report the host CPU, libc or Node
-major, so a person who manages the host must confirm that it runs Linux x64 with
-glibc and Node 24 before the first release. If it differs, adjust the workflow
-target and rebuild before uploading. Do not substitute a local build artifact
-for the archive from the PR's checked head commit.
+major. On 2026-10-22 the destination Studio container was verified as Linux x64,
+glibc 2.36, Node.js 24.15.0 and Node ABI 137, matching the workflow target. Recheck
+after changing the host; if it differs, adjust the workflow target and rebuild
+before uploading. Do not substitute a local build artifact for the archive from
+the PR's checked head commit.
 
-### Publish a PR preview (authorized person)
+### Manual recovery (authorized person)
+
+Normally the workflow publishes the preview automatically. If a deployment
+needs to be repeated manually, use the same checked artifact:
 
 1. Confirm the PR checks passed for its current head and note that full commit
    SHA. Download the matching artifact from the same successful Actions run:
@@ -155,11 +186,11 @@ for the archive from the PR's checked head commit.
    under the person account, then run:
 
    ```bash
-   nb-studio app ensure test-project2-pr-1 --environment preview
+   nb-studio app ensure test-project2-pr-1 --environment preview \
+     --repository chenos/test-project2 --profile studio-test-1
    ```
 
-   Supply the repository option if that person's CLI requires it. Do not
-   create another environment or an image registry.
+   Do not create another environment or an image registry.
 
 4. Confirm `nb-studio deploy --help` under the person account. Upload and deploy
    the checked archive with the **open PR's real head SHA**:
@@ -167,7 +198,7 @@ for the archive from the PR's checked head commit.
    ```bash
    nb-studio deploy --app test-project2-pr-1 \
      --repository chenos/test-project2 --sha <head-sha> \
-     --file dist.tar.gz --json
+     --file dist.tar.gz --profile studio-test-1 --json
    ```
 
    Studio then associates the App with the PR as its preview. Keep the returned

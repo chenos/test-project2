@@ -34,6 +34,14 @@ const appRoutes: AppClientRouteContribution = defineAppRoutes([
     path: '/hello',
   },
   {
+    authz: 'skip',
+    auth: 'required',
+    componentLoader: () => import('./pages/hello3/index.js'),
+    name: 'hello3',
+    navigation: { title: 'navigation.hello3', icon: Hand },
+    path: '/hello3',
+  },
+  {
     auth: 'guest',
     authz: 'skip',
     componentLoader: () => import('./pages/auth/login.js'),

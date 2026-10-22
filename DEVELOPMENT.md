@@ -122,9 +122,11 @@ and `source-sha.txt`. The check-and-build job uses no Studio credential.
 
 After those checks pass, a separate job downloads that exact artifact, verifies
 its source SHA and checksum, and deploys it to
-`https://studio-test-1.v2.test.nocobase.com`, using the existing `preview`
+`https://studio-test-1.v2.test.nocobase.com/main`, using the existing `preview`
 environment and App ID `test-project2-pr-<PR-number>`. Studio associates the
 App with the open PR and shows it on linked issues, including PM-2 for PR #1.
+Studio management and its API live under `/main`; preview Apps remain at
+`/test-project2-pr-<PR-number>/` beside that mount. Do not add `/main` to preview URLs.
 Studio removes the preview and its data when the PR is merged or closed.
 Fork PRs and PRs labeled `no-preview` still run checks but skip deployment.
 New pushes cancel superseded runs for the same PR.
@@ -176,7 +178,7 @@ needs to be repeated manually, use the same checked artifact:
    `dist/package.json` build target as well. Stop if identity, platform or
    integrity differs.
 
-2. Sign in to `https://studio-test-1.v2.test.nocobase.com` with a person account
+2. Sign in to `https://studio-test-1.v2.test.nocobase.com/main` with a person account
    that may create and deploy Apps. Use that Studio's `nb-studio` CLI and confirm
    the server and identity with `nb-studio --help` and `nb-studio whoami --json`.
    Do not export or print the repository's `NB_STUDIO_API_KEY` secret for this

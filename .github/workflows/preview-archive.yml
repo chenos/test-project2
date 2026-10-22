@@ -81,7 +81,7 @@ jobs:
       !contains(github.event.pull_request.labels.*.name, 'no-preview')
     runs-on: ubuntu-24.04
     env:
-      NB_STUDIO_SERVER: https://studio-test-1.v2.test.nocobase.com
+      NB_STUDIO_SERVER: https://studio-test-1.v2.test.nocobase.com/main
       APP_ID: test-project2-pr-${{ github.event.pull_request.number }}
       SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
       LOGS: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

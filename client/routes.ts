@@ -1,4 +1,4 @@
-import { Home } from 'lucide-react';
+import { Hand, Home } from 'lucide-react';
 import {
   defineAppRoutes,
   type AppClientRouteContribution,
@@ -24,6 +24,14 @@ const appRoutes: AppClientRouteContribution = defineAppRoutes([
     componentLoader: () => import('./pages/inbox.js'),
     name: 'inbox',
     path: '/inbox',
+  },
+  {
+    authz: 'skip',
+    auth: 'required',
+    componentLoader: () => import('./pages/hello/index.js'),
+    name: 'hello',
+    navigation: { title: 'navigation.hello', icon: Hand },
+    path: '/hello',
   },
   {
     auth: 'guest',

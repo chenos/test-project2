@@ -1,0 +1,139 @@
+name: PR checks and Studio preview
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-project2-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the actual PR commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build Linux x64 archive for preview host
+        run: pnpm build --target linux-x64 --node-version 24 --tar
+
+      - name: Record and verify artifact identity
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          node -e 'const t = require("./dist/package.json").nocobase.buildTarget; if (t.platform !== "linux" || t.arch !== "x64" || t.libc !== "glibc" || t.nodeMajor !== 24) process.exit(1)'
+          tar -tzf storage/exports/dist.tar.gz > /dev/null
+          cd storage/exports
+          sha256sum dist.tar.gz > dist.tar.gz.sha256
+          printf '%s\n' "$SOURCE_SHA" > source-sha.txt
+
+      - name: Upload preview archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-archive-${{ github.event.pull_request.head.sha }}
+          path: |
+            storage/exports/dist.tar.gz
+            storage/exports/dist.tar.gz.sha256
+            storage/exports/source-sha.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy-preview:
+    name: Deploy PR preview to Studio
+    needs: check-and-build
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !contains(github.event.pull_request.labels.*.name, 'no-preview')
+    runs-on: ubuntu-24.04
+    env:
+      NB_STUDIO_SERVER: https://studio-test-1.v2.test.nocobase.com/main
+      APP_ID: test-project2-pr-${{ github.event.pull_request.number }}
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      LOGS: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Download the checked archive
+        uses: actions/download-artifact@v4
+        with:
+          name: preview-archive-${{ github.event.pull_request.head.sha }}
+          path: preview-archive
+
+      - name: Verify archive identity and checksum
+        working-directory: preview-archive
+        run: |
+          test "$(cat source-sha.txt)" = "$SOURCE_SHA"
+          sha256sum --check dist.tar.gz.sha256
+
+      - name: Set up Node.js for the Studio CLI
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # Bootstrap from this Studio's generated CI template. All business
+      # operations below use nb-studio and the repository-scoped CI key.
+      - name: Install the Studio CLI
+        id: studio-cli
+        env:
+          NB_STUDIO_API_KEY: ${{ secrets.NB_STUDIO_API_KEY }}
+        run: |
+          test -n "$NB_STUDIO_API_KEY" || { echo 'Missing repository secret NB_STUDIO_API_KEY'; exit 1; }
+          NB_STUDIO_CLI_ENV="$(curl -fsS -H "x-api-key: $NB_STUDIO_API_KEY" "$NB_STUDIO_SERVER/api/agents/dist/products/nb-studio/targets/linux-x64?format=env")"
+          eval "$NB_STUDIO_CLI_ENV"
+          mkdir -p "$RUNNER_TEMP/nb-studio"
+          curl -fsS -H "x-api-key: $NB_STUDIO_API_KEY" "$NB_STUDIO_SERVER$url" | tar -xz --strip-components=1 -C "$RUNNER_TEMP/nb-studio"
+          echo "$RUNNER_TEMP/nb-studio/bin" >> "$GITHUB_PATH"
+
+      - name: Report preview build to Studio
+        env:
+          NB_STUDIO_API_KEY: ${{ secrets.NB_STUDIO_API_KEY }}
+        run: nb-studio build status --app "$APP_ID" --state building --logs "$LOGS"
+
+      - name: Create or reuse this PR's preview application
+        env:
+          NB_STUDIO_API_KEY: ${{ secrets.NB_STUDIO_API_KEY }}
+        run: nb-studio app ensure "$APP_ID" --environment preview --repository "$GITHUB_REPOSITORY"
+
+      - name: Deploy the checked PR head
+        env:
+          NB_STUDIO_API_KEY: ${{ secrets.NB_STUDIO_API_KEY }}
+        run: nb-studio deploy --app "$APP_ID" --repository "$GITHUB_REPOSITORY" --sha "$SOURCE_SHA" --file preview-archive/dist.tar.gz
+
+      - name: Report deployment failure
+        if: failure() && steps.studio-cli.outcome == 'success'
+        env:
+          NB_STUDIO_API_KEY: ${{ secrets.NB_STUDIO_API_KEY }}
+        run: nb-studio build status --app "$APP_ID" --state failed --logs "$LOGS"
